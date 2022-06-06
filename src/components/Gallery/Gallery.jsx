@@ -1,6 +1,6 @@
-import { Component } from 'react';
+import { useState, useEffect } from 'react';
 import Skeleton from 'react-loading-skeleton';
-import fetchImages from 'components/services/fetchImages';
+import fetchImages from '../../services/fetchImages';
 import ImageGallery from './ImageGallery/ImageGallery';
 import 'react-loading-skeleton/dist/skeleton.css';
 import s from './Gallery.module.css';
@@ -12,83 +12,68 @@ const Status = {
   REJECTED: 'rejected',
 };
 
-export default class Gallery extends Component {
-  state = {
-    images: [],
-    page: 1,
-    error: null,
-    status: Status.IDLE,
-    button: true,
-  };
+export default function Gallery({ searchQuery }) {
+  const [images, setImages] = useState([]);
+  const [page, setPage] = useState(1);
+  const [error, setError] = useState(null);
+  const [status, setStatus] = useState(Status.IDLE);
+  const [button, setButton] = useState(false);
 
-  componentDidUpdate(prevProps, prevState) {
-    const value = this.props.searchQuery;
-    const { page, images } = this.state;
+  useEffect(() => {
+    if (!searchQuery) return;
 
-    if (prevProps.searchQuery !== value) {
-      this.setState({
-        images: [],
-        status: Status.PENDING,
-        button: true,
-        page: 1,
+    setStatus(Status.PENDING);
+    setPage(1);
+    setButton(true);
+
+    fetchImages(searchQuery, page)
+      .then(({ hits, totalHits }) => {
+        if (hits.length === totalHits) {
+          setButton(false);
+        }
+
+        setImages(hits);
+        setStatus(Status.RESOLVED);
+      })
+      .catch(error => {
+        setError(error.message);
+        setStatus(Status.REJECTED);
       });
+  }, [searchQuery]);
 
-      fetchImages(value, page)
-        .then(data => {
-          if (data.hits.length <= data.totalHits)
-            this.setState({ button: false });
+  useEffect(() => {
+    if (page === 1) return;
 
-          this.setState({ images: data.hits, status: Status.RESOLVED });
-        })
-        .catch(error => {
-          this.setState({ error: error.message, status: Status.REJECTED });
-        });
-    }
+    fetchImages(searchQuery, page)
+      .then(({ hits, totalHits }) => {
+        if (images.length + hits.length === totalHits) setButton(false);
 
-    if (prevState.page !== page) {
-      this.setState({
-        status: Status.PENDING,
+        setImages([...images, ...hits]);
+        setStatus(Status.RESOLVED);
+      })
+      .catch(error => {
+        setError(error.message);
+        setStatus(Status.REJECTED);
       });
+  }, [page]);
 
-      fetchImages(value, page)
-        .then(data => {
-          if (images.length + data.hits.length === data.totalHits)
-            this.setState({ button: false });
+  const handleLoadMoreClick = () => setPage(page + 1);
 
-          this.setState({
-            images: [...images, ...data.hits],
-            status: Status.RESOLVED,
-          });
-        })
-        .catch(error => {
-          this.setState({ error: error.message, status: Status.REJECTED });
-        });
-    }
-  }
+  if (status === Status.IDLE) return <p>Enter a search query</p>;
 
-  handleLoadMoreClick = () => {
-    this.setState(({ page }) => ({ page: page + 1 }));
-  };
+  if (status === Status.PENDING)
+    return (
+      <Skeleton count={12} containerClassName={s.loader} className={s.card} />
+    );
 
-  render() {
-    const { images, status, error, button } = this.state;
+  if (status === Status.RESOLVED)
+    return (
+      <ImageGallery
+        images={images}
+        onClick={handleLoadMoreClick}
+        button={button}
+      />
+    );
 
-    if (status === 'idle') return <p>Веди поисковый запрос</p>;
-
-    if (status === 'pending')
-      return (
-        <Skeleton count={12} containerClassName={s.loader} className={s.card} />
-      );
-
-    if (status === 'resolved')
-      return (
-        <ImageGallery
-          images={images}
-          onClick={this.handleLoadMoreClick}
-          button={button}
-        />
-      );
-
-    if (status === 'rejected') return <p>{error}</p>;
-  }
+  if (status === Status.REJECTED) return <p>{error}</p>;
 }
